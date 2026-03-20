@@ -737,7 +737,7 @@ class MainActivity : ComponentActivity() {
         }
 
         val privacyScore by remember { derivedStateOf { calculatePrivacyScore() } }
-        val suspiciousDevices = devices.filter { it.isSuspicious() }
+        val suspiciousDevices by remember { derivedStateOf { devices.filter { it.isSuspicious() } } }
 
         Column(
             modifier = Modifier
@@ -1456,6 +1456,7 @@ class MainActivity : ComponentActivity() {
                                     .sortedBy { it.impact }
                                 grouped.forEach { row ->
                                     val count = row.groupDevices.size
+                                    val isUnknownType = row.deviceType == DeviceType.UNKNOWN || row.groupDevices.any { it.manufacturer == "Unknown" }
                                     Row(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1466,14 +1467,41 @@ class MainActivity : ComponentActivity() {
                                                 if (count == 1) row.deviceType.displayName else "${count}x ${row.deviceType.displayName}",
                                                 fontSize = 13.sp, color = textColor, fontWeight = FontWeight.Medium
                                             )
-                                            Text(
-                                                if (count == 1) row.groupDevices.first().macAddress else "$count devices",
-                                                fontSize = 11.sp, color = subtextColor
-                                            )
+                                            if (isUnknownType) {
+                                                row.groupDevices.forEach { device ->
+                                                    Text(
+                                                        device.macAddress,
+                                                        fontSize = 11.sp, color = subtextColor,
+                                                        fontFamily = FontFamily.Monospace
+                                                    )
+                                                }
+                                            } else {
+                                                Text(
+                                                    if (count == 1) row.groupDevices.first().macAddress else "$count devices",
+                                                    fontSize = 11.sp, color = subtextColor
+                                                )
+                                            }
                                         }
                                         Text("${row.impact} pts", fontSize = 13.sp, color = Color(0xFFFF4444), fontWeight = FontWeight.Medium)
                                     }
                                 }
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B3A1F)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF44FF88), modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text("No threats detected", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF44FF88))
                             }
                         }
                     }
