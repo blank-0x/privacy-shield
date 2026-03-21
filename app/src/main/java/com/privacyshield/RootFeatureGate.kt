@@ -3,15 +3,14 @@ package com.privacyshield
 object RootFeatureGate {
     val enabled: Boolean get() = BuildConfig.ENABLE_ROOT_FEATURES
 
-    fun isRooted(): Boolean {
-        return try {
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-            val result = process.inputStream.bufferedReader().readLine() ?: ""
-            result.contains("uid=0")
-        } catch (e: Exception) {
-            false
-        }
-    }
+    // SECURITY FIX (public build): Shell execution removed. isRooted() is dead code in the
+    // public release (ENABLE_ROOT_FEATURES=false); stub preserved for API compatibility.
+    fun isRooted(): Boolean = false
 
-    fun canUseRootFeatures(): Boolean = enabled && isRooted()
+    fun canUseRootFeatures(): Boolean {
+        // If root features explicitly enabled via BuildConfig, trust it
+        // (used for dev builds and emulator testing)
+        if (BuildConfig.ENABLE_ROOT_FEATURES) return true
+        return false
+    }
 }
