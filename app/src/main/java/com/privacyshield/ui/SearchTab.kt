@@ -70,22 +70,30 @@ fun SearchTab(
         }
     }
 
-    val filteredDevices = devices.filter { device ->
-        val matchesSearch = searchQuery.isEmpty() ||
-                device.name.contains(searchQuery, ignoreCase = true) ||
-                device.macAddress.contains(searchQuery, ignoreCase = true) ||
-                device.manufacturer.contains(searchQuery, ignoreCase = true)
-        val matchesFilter = selectedFilter == null || device.type == selectedFilter
-        val matchesSuspicious = !searchSuspiciousOnly || device.isSuspicious()
-        val matchesSafe = !searchSafeOnly || !device.isSuspicious()
-        matchesSearch && matchesFilter && matchesSuspicious && matchesSafe
+    val filteredDevices by remember(searchQuery, selectedFilter, searchSuspiciousOnly, searchSafeOnly) {
+        derivedStateOf {
+            devices.filter { device ->
+                val matchesSearch = searchQuery.isEmpty() ||
+                        device.name.contains(searchQuery, ignoreCase = true) ||
+                        device.macAddress.contains(searchQuery, ignoreCase = true) ||
+                        device.manufacturer.contains(searchQuery, ignoreCase = true)
+                val matchesFilter = selectedFilter == null || device.type == selectedFilter
+                val matchesSuspicious = !searchSuspiciousOnly || device.isSuspicious()
+                val matchesSafe = !searchSafeOnly || !device.isSuspicious()
+                matchesSearch && matchesFilter && matchesSuspicious && matchesSafe
+            }
+        }
     }
 
-    val sortedDevices = when (searchSortOption) {
-        0 -> filteredDevices.sortedByDescending { it.signalStrength }
-        1 -> filteredDevices.sortedBy { it.getDistance() }
-        2 -> filteredDevices.sortedBy { it.type.displayName }
-        else -> filteredDevices
+    val sortedDevices by remember(searchSortOption) {
+        derivedStateOf {
+            when (searchSortOption) {
+                0 -> filteredDevices.sortedByDescending { it.signalStrength }
+                1 -> filteredDevices.sortedBy { it.getDistance() }
+                2 -> filteredDevices.sortedBy { it.type.displayName }
+                else -> filteredDevices
+            }
+        }
     }
 
     Column(

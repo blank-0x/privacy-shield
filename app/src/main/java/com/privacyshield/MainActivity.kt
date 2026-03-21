@@ -131,6 +131,12 @@ class MainActivity : ComponentActivity() {
     private var selectedSecurityFeature by mutableStateOf<String?>(null)
     private var lastEvilTwinAlerts by mutableStateOf<List<EvilTwinAlert>>(emptyList())
 
+    // BLE scan buffer — batches updates to main thread every 500ms to reduce recompositions
+    private val deviceBuffer = mutableListOf<DetectedDevice>()
+    private val signalBuffer = mutableListOf<Pair<String, Int>>()
+    private var lastBufferFlush = 0L
+    private val bufferLock = Any()
+
     // Python Scanner state — hoisted to MainActivity so scans survive tab navigation
     private var nmapTarget by mutableStateOf("")
     private var nmapResults by mutableStateOf<NmapScanResult?>(null)
@@ -5479,6 +5485,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun flushDeviceBuffer() {
+        val snapshot: List<DetectedDevice>
+        val signals: List<Pair<String, Int>>
+        synchronized(bufferLock) {
+            if (deviceBuffer.isEmpty() && signalBuffer.isEmpty()) return
+            snapshot = deviceBuffer.toList()
+            signals = signalBuffer.toList()
+            deviceBuffer.clear()
+            signalBuffer.clear()
+        }
+        snapshot.forEach { buffered ->
+            val existingIndex = devices.indexOfFirst { it.macAddress == buffered.macAddress }
+            if (existingIndex >= 0) {
+                devices[existingIndex] = devices[existingIndex].copy(signalStrength = buffered.signalStrength)
+            } else {
+                devices.add(buffered)
+            }
+        }
+        signals.forEach { (mac, rssi) ->
+            signalHistory.getOrPut(mac) { mutableListOf() }.let { history ->
+                history.add(rssi)
+                if (history.size > 20) history.removeAt(0)
+            }
+        }
+    }
+
     private fun startDeviceScan(mode: ScanMode) {
         val now = System.currentTimeMillis()
         if (now - lastManualScanTime < 30_000L) {
@@ -5489,6 +5521,8 @@ class MainActivity : ComponentActivity() {
         scanStartTime = System.currentTimeMillis()
         devices.clear()
         signalHistory.clear()
+        synchronized(bufferLock) { deviceBuffer.clear(); signalBuffer.clear() }
+        lastBufferFlush = 0L
         isScanning = true
         currentScanMode = mode
         currentScanSessionId = UUID.randomUUID().toString()
@@ -5560,24 +5594,27 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (shouldAdd) {
-                    val existingIndex = devices.indexOfFirst { it.macAddress == device.address }
-                    if (existingIndex >= 0) {
-                        devices[existingIndex] = devices[existingIndex].copy(signalStrength = result.rssi)
-                    } else {
-                        devices.add(
-                            DetectedDevice(
-                                name = deviceName,
-                                type = deviceType,
-                                macAddress = device.address,
-                                signalStrength = result.rssi,
-                                protocol = "Bluetooth",
-                                manufacturer = manufacturer
-                            )
-                        )
+                    val newDevice = DetectedDevice(
+                        name = deviceName,
+                        type = deviceType,
+                        macAddress = device.address,
+                        signalStrength = result.rssi,
+                        protocol = "Bluetooth",
+                        manufacturer = manufacturer
+                    )
+                    synchronized(bufferLock) {
+                        val existing = deviceBuffer.indexOfFirst { it.macAddress == device.address }
+                        if (existing >= 0) {
+                            deviceBuffer[existing] = newDevice
+                        } else {
+                            deviceBuffer.add(newDevice)
+                        }
+                        signalBuffer.add(device.address to result.rssi)
                     }
-                    signalHistory.getOrPut(device.address) { mutableListOf() }.let { history ->
-                        history.add(result.rssi)
-                        if (history.size > 20) history.removeAt(0)
+                    val now = System.currentTimeMillis()
+                    if (now - lastBufferFlush > 500) {
+                        lastBufferFlush = now
+                        android.os.Handler(mainLooper).post { flushDeviceBuffer() }
                     }
                 }
             }
@@ -5589,6 +5626,7 @@ class MainActivity : ComponentActivity() {
                 try {
                     bluetoothAdapter.bluetoothLeScanner?.stopScan(scanCallback)
                 } finally {
+                    flushDeviceBuffer() // flush any remaining buffered devices
                     lastScanDuration = System.currentTimeMillis() - scanStartTime
                     lastScanTime = System.currentTimeMillis()
                     isScanning = false

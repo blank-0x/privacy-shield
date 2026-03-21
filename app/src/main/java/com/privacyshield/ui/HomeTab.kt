@@ -94,7 +94,7 @@ fun HomeTab(
     }
 
     val privacyScore by remember { derivedStateOf { calculatePrivacyScore() } }
-    val suspiciousDevices = devices.filter { it.isSuspicious() }
+    val suspiciousDevices by remember { derivedStateOf { devices.filter { it.isSuspicious() } } }
 
     Column(
         modifier = Modifier
